@@ -4,16 +4,40 @@ const moment = require('moment')
 const mongodb = require('mongodb').MongoClient
 const uuidv1 = require('uuid/v1')
 
+const userId = '0835c4a7-497c-11e9-bf47-0242ac190006'
+const mssqlConf = {
+    user: 'SA',
+    password: 'Asdf!234',
+    db: 'ratetel',
+    host: 'localhost'
+}
+const mongoConf = {
+    user: 'admin',
+    password: 'zmVcMLV3E2XhyYZDb3EqEyb44XPFB2Qr',
+    db: 'map-crm',
+    collection: 'notes',
+    host: 'localhost',
+    port: 44017
+}
+const mysqlConf = {
+    port: 43266,
+    host: 'localhost',
+    user: 'map-crm',
+    password: '6529e36bc27f81f4c527f6d31bf1',
+    database: 'map-crm',
+    charset: 'utf8mb4_unicode_ci'
+}
+
 const sleep = (ms) => {
     return new Promise(resolve => setTimeout(resolve, ms));
 };
 
 const con = async () => {
     try {
-        await sql.connect('mssql://SA:Asdf!234@localhost/ratetel')
+        await sql.connect('mssql://' + mssqlConf.user + ':' + mssqlConf.password + '@' + mssqlConf.host + '/' + mssqlConf.db)
         const resultNotes = await sql.query`select * from placesNotelog`
 
-        const url = "mongodb://localhost:44017/";
+        const url = 'mongodb://' + mongoConf.host + ':' + mongoConf.port + '/';
 
         const notes = resultNotes.recordset;
         let notesObj = [];
@@ -25,7 +49,7 @@ const con = async () => {
                 elementId: note.PlaceID,
                 elementType: 16,
                 noteType: 6,
-                createdBy: 'd63f7d67-469c-11e9-895a-0242c0a85004',
+                createdBy: userId,
                 createdAt: moment(note.date).unix(),
                 updatedAt: moment(note.date).unix(),
                 dataValue: { workerId: note.update_worker_id }
@@ -35,13 +59,13 @@ const con = async () => {
         mongodb.connect(url, {
             useNewUrlParser: true,
             auth: {
-                user: 'admin',
-                password: 'zmVcMLV3E2XhyYZDb3EqEyb44XPFB2Qr',
+                user: mongoConf.user,
+                password: mongoConf.password,
             }
         }, function (err, db) {
             if (err) throw err;
-            const dbo = db.db("map-crm");
-            dbo.collection("notes").insertMany(notesObj, function (err, res) {
+            const dbo = db.db(mongoConf.db);
+            dbo.collection(mongoConf.collection).insertMany(notesObj, function (err, res) {
                 if (err) throw err;
                 console.log("Number of documents inserted: " + res.insertedCount);
                 db.close();
@@ -52,14 +76,7 @@ const con = async () => {
 
         const result = await sql.query`select * from places left join placeInfo on places.placeID = placeInfo.placeId left join placeDetails on places.placeID = placeDetails.placeID`
 
-        const connection = mysql.createConnection({
-            port: 43266,
-            host: '127.0.0.1',
-            user: 'map-crm',
-            password: '6529e36bc27f81f4c527f6d31bf1',
-            database: 'map-crm',
-            charset: 'utf8mb4_unicode_ci'
-        });
+        const connection = mysql.createConnection(mysqlConf);
 
         connection.connect();
 
@@ -101,7 +118,7 @@ const con = async () => {
                 record.ToSync,
                 record.CampaignCode,
                 record.IsImportant,
-                'd63f7d67-469c-11e9-895a-0242c0a85004',
+                userId,
                 moment(record.InsertDate).format("YYYY-MM-DD HH:mm:ss"),
                 moment(record.lastUpdate).format("YYYY-MM-DD HH:mm:ss"),
                 parseInt(moment(record.contractDate).format("YYYY")) >= 1970 ? record.contractDate : null,
