@@ -4,7 +4,8 @@ const moment = require('moment')
 const mongodb = require('mongodb').MongoClient
 const uuidv1 = require('uuid/v1')
 
-const userId = '0835c4a7-497c-11e9-bf47-0242ac190006'
+const userId = 'b1e78004-4a47-11e9-a1ea-0242ac140003';
+const userSecret = '-ad4ad1ab0ae9';
 const mssqlConf = {
     user: 'SA',
     password: 'Asdf!234',
@@ -34,6 +35,7 @@ const sleep = (ms) => {
 
 const con = async () => {
     try {
+
         await sql.connect('mssql://' + mssqlConf.user + ':' + mssqlConf.password + '@' + mssqlConf.host + '/' + mssqlConf.db)
 
         const result = await sql.query`select * from places left join placeInfo on places.placeID = placeInfo.placeId left join placeDetails on places.placeID = placeDetails.placeID`
@@ -44,21 +46,22 @@ const con = async () => {
 
         const records = result.recordset;
 
-        let IDs = [];
+        let IDs = {};
         let query = [];
         let updateQuery = [];
-        let defaultSql = 'INSERT INTO app_place_leads (id, geo) VALUES ';
+        let defaultSql = 'INSERT INTO app_place_leads (placeId, geo) VALUES ';
         for (let i = 0; i < records.length; i++) {
 
             let points = null;
             let record = records[i];
+
             if (record.geo) {
                 const point = record.geo.points[0];
 
                 points = "ST_GeomFromText('POINT(" + point.x + " " + point.y + ")') ";
             }
 
-            IDs.push(record.placeID[0]);
+            IDs[record.placeID[0]] = record.ID;
 
             let sqlR = '';
             sqlR += '( ';
@@ -69,11 +72,12 @@ const con = async () => {
             updateQuery.push(sqlR);
 
             query.push([
+                record.ID,
                 record.placeID[0],
                 record.name,
                 record.address,
                 record.telephone,
-                record.type,
+                decodeURIComponent(record.type),
                 record.status,
                 record.price,
                 record.rating,
@@ -94,7 +98,7 @@ const con = async () => {
             if ((i + 1) % 1000 === 0) {
                 console.log(i);
 
-                connection.query('INSERT INTO app_place_leads ( id, name, address, phone, type, status, price, rating, review, website, geo, data, toSync, campaignCode, isImportant, createdBy, createdAt, updatedAt, contractAt, nextFollowupDate) VALUES ?', [query], function (err) {
+                connection.query('INSERT INTO app_place_leads ( id, placeId, name, address, phone, type, status, price, rating, review, website, geo, data, toSync, campaignCode, isImportant, createdBy, createdAt, updatedAt, contractAt, nextFollowupDate) VALUES ?', [query], function (err) {
                     if (err) throw err;
                 });
 
@@ -113,7 +117,7 @@ const con = async () => {
         }
 
         if (query.length) {
-            connection.query('INSERT INTO app_place_leads ( id, name, address, phone, type, status, price, rating, review, website, geo, data, toSync, campaignCode, isImportant, createdBy, createdAt, updatedAt, contractAt, nextFollowupDate) VALUES ?', [query], function (err) {
+            connection.query('INSERT INTO app_place_leads ( id, placeId, name, address, phone, type, status, price, rating, review, website, geo, data, toSync, campaignCode, isImportant, createdBy, createdAt, updatedAt, contractAt, nextFollowupDate) VALUES ?', [query], function (err) {
                 if (err) throw err;
             });
 
@@ -138,20 +142,25 @@ const con = async () => {
         const notes = resultNotes.recordset;
         let notesObj = [];
 
+        let nc = 0;
         for (let n = 0; n < notes.length; n++) {
             let note = notes[n];
 
-            if (IDs.includes(note.PlaceID)) {
+            if (note.PlaceID in IDs) {
                 notesObj.push({
                     _id: uuidv1(),
-                    elementId: note.PlaceID,
+                    elementId: IDs[note.PlaceID],
                     elementType: 16,
                     noteType: 6,
-                    createdBy: userId,
+                    createdBy: userId + userSecret,
                     createdAt: moment(note.date).unix(),
                     updatedAt: moment(note.date).unix(),
-                    dataValue: { workerId: note.update_worker_id }
+                    dataValue: {
+                        by: 'admin',
+                        workerId: note.update_worker_id
+                    }
                 });
+                nc++;
             }
         }
 
@@ -166,7 +175,7 @@ const con = async () => {
             const dbo = db.db(mongoConf.db);
             dbo.collection(mongoConf.collection).insertMany(notesObj, function (err, res) {
                 if (err) throw err;
-                console.log("Number of documents inserted: " + res.insertedCount);
+                console.log("Number of documents inserted: " + nc);
                 db.close();
             });
         });
